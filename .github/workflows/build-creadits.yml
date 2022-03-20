@@ -1,0 +1,102 @@
+name: Reusable Workflow for Build Creadits container image
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: 'Target Environment'
+        required: true
+        type: string
+      name:
+        description: 'Deployment/ECR repo name'
+        required: true
+        type: string
+      deployRepo:
+        description: 'Deployment repo name'
+        required: false
+        type: string
+        default: refuel4/flux-applications
+      deployBranch:
+        description: 'Deployment repo branch'
+        required: true
+        type: string
+      dockerfile:
+        description: 'Dockerfile name'
+        required: false
+        type: string
+        default: 'Dockerfile.ci'
+    secrets:
+      BUILD_KEY:
+        required: true
+      DEPLOY_KEY:
+        required: true
+      SLACK_WEBHOOK_URL:
+        required: true
+
+jobs:
+  build:
+    name: ${{ github.workflow }} ${{ github.ref_name }}
+
+    runs-on:
+      - self-hosted
+      - builder
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set vars
+        id: vars
+        run: |
+          ref=$(echo ${{ github.ref_name }} | sed -e 's|/|-|g')
+          echo "::set-output name=tag::${{ inputs.target }}-${ref}-${{ github.sha }}"
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.BUILD_KEY }}
+          name: build
+          known_hosts: unnecessary
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          DOCKER_BUILDKIT: 1
+          DOCKER_DRIVER: overlay2
+        run: |
+          docker build \
+            --build-arg TARGET_ENV=${{ inputs.target }} \
+            --ssh default=$HOME/.ssh/build \
+            --tag ${{ steps.login-ecr.outputs.registry }}/${{ inputs.name }}:${{ steps.vars.outputs.tag }} \
+            --file ${{ inputs.dockerfile }} .
+          docker push --all-tags ${{ steps.login-ecr.outputs.registry }}/${{ inputs.name }}
+
+      - name: Checkout Deployment Repo
+        uses: actions/checkout@v2
+        with:
+          repository: ${{ inputs.deployRepo }}
+          ref: ${{ inputs.deployBranch }}
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
+
+      - name: Set image tag
+        run: |
+          cd deployments/${{ inputs.name }}/${{ inputs.target }}
+          sed -i "s|newTag:.*|newTag: ${{ steps.vars.outputs.tag }}|g" kustomization.yaml
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "github-actions.noreply@creadits.com"
+          git add .
+          git commit -m "chore: update ${{ inputs.name }}/${{ inputs.target }} to ${{ steps.vars.outputs.tag }}" -m "by: ${{ github.actor }}" || true
+          git push -u origin ${{ inputs.deployBranch }}
+      - name: Notify
+        uses: 8398a7/action-slack@v3
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,job,took
+          job_name: '${{ github.workflow }} ${{ github.ref_name }}'
+          author_name: 'Started by ${{ github.actor }}'
