@@ -48,8 +48,14 @@ jobs:
       - name: Set vars
         id: vars
         run: |
-          ref=$(echo ${{ github.ref_name }} | sed -e 's|/|-|g')
-          echo "::set-output name=tag::${{ inputs.target }}-${ref}-${{ github.sha }}"
+          ref=$(echo -n ${{ github.ref_name }} | tr '/' '-')
+          if [[ "${{ github.ref_type }}" == "tag" ]]
+          then
+            tag="${{ inputs.target }}-${ref}"
+          else
+            tag="${{ inputs.target }}-${ref}-${{ github.sha }}"
+          fi
+          echo "::set-output name=tag::${tag}"
 
       - name: Install SSH key
         uses: shimataro/ssh-key-action@v2
