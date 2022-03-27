@@ -51,7 +51,7 @@ jobs:
           ECR_REPO: ${{ steps.login-ecr.outputs.registry }}/${{ inputs.name }}
         run: |
           docker build \
-            --cache-from ${ECR_REPO}:latest
+            --cache-from ${ECR_REPO}:latest \
             --tag ${ECR_REPO}:${{ steps.vars.outputs.tag }} \
             --tag ${ECR_REPO}:latest \
             --file ${{ inputs.dockerfile }} .
