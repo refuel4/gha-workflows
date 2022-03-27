@@ -1,0 +1,69 @@
+name: Reusable Workflow for building container image
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: 'ECR repo name'
+        required: true
+        type: string
+      dockerfile:
+        description: 'Dockerfile name'
+        required: false
+        type: string
+        default: 'Dockerfile'
+    secrets:
+      SLACK_WEBHOOK_URL:
+        required: true
+
+jobs:
+  build:
+    name: ${{ github.workflow }} ${{ github.ref_name }}
+
+    runs-on:
+      - self-hosted
+      - builder
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set vars
+        id: vars
+        run: |
+          ref=$(echo -n ${{ github.ref_name }} | tr '/' '-')
+          if [[ "${{ github.ref_type }}" == "tag" ]]
+          then
+            tag="${ref}"
+          else
+            tag="${ref}-${{ github.sha }}"
+          fi
+          echo "::set-output name=tag::${tag}"
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          DOCKER_BUILDKIT: 1
+          DOCKER_DRIVER: overlay2
+          ECR_REPO: ${{ steps.login-ecr.outputs.registry }}/${{ inputs.name }}
+        run: |
+          docker build \
+            --cache-from ${ECR_REPO}:latest
+            --tag ${ECR_REPO}:${{ steps.vars.outputs.tag }} \
+            --tag ${ECR_REPO}:latest \
+            --file ${{ inputs.dockerfile }} .
+          docker push --all-tags ${ECR_REPO}
+
+      - name: Notify
+        uses: 8398a7/action-slack@v3
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,job,took
+          job_name: '${{ github.workflow }} ${{ github.ref_name }}'
+          author_name: 'Started by ${{ github.actor }}'

@@ -96,6 +96,7 @@ jobs:
           git add .
           git commit -m "chore: update ${{ inputs.name }}/${{ inputs.target }} to ${{ steps.vars.outputs.tag }}" -m "by: ${{ github.actor }}" || true
           git push -u origin ${{ inputs.deployBranch }}
+
       - name: Notify
         uses: 8398a7/action-slack@v3
         if: always()
