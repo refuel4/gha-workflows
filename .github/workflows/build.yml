@@ -12,13 +12,54 @@ on:
         required: false
         type: string
         default: 'Dockerfile'
+      context:
+        description: 'Build context'
+        required: false
+        type: string
+        default: '.'
+      tagPrefix:
+        description: 'Image tag prefix'
+        required: false
+        type: string
+        default: ''
+      args:
+        description: 'Build arguments'
+        required: false
+        type: string
+        default: ''
+      preBuildCmd:
+        description: 'Pre Build command'
+        required: false
+        type: string
+        default: ''
+      secretFile:
+        description: 'secret file name'
+        required: false
+        type: string
+        default: ''
+      sshFile:
+        description: 'ssh key file name'
+        required: false
+        type: string
+        default: ''
     secrets:
       SLACK_WEBHOOK_URL:
         required: true
+      SECRET:
+        required: false
+      SSH_KEY:
+        required: false
+    outputs:
+      tag:
+        value: ${{ jobs.build.outputs.tag }}
+
 
 jobs:
   build:
     name: ${{ github.workflow }} ${{ github.ref_name }}
+
+    outputs:
+      tag: ${{ steps.vars.outputs.tag }}
 
     runs-on:
       - self-hosted
@@ -34,11 +75,30 @@ jobs:
           ref=$(echo -n ${{ github.ref_name }} | tr '/' '-')
           if [[ "${{ github.ref_type }}" == "tag" ]]
           then
-            tag="${ref}"
+            tag="${{ inputs.tagPrefix }}${ref}"
           else
-            tag="${ref}-${{ github.sha }}"
+            tag="${{ inputs.tagPrefix }}${ref}-${{ github.sha }}"
           fi
           echo "::set-output name=tag::${tag}"
+
+      - name: Create secret file
+        id: set-secret
+        if: ${{ inputs.secretFile }}
+        run: |
+          echo "${{ secrets.SECRET }}" > ${{ inputs.secretFile }}
+          chmod 600 ${{ inputs.secretFile }}
+
+      - name: Create ssh key file
+        id: set-ssh-key
+        if: ${{ inputs.sshFile }}
+        run: |
+          echo "${{ secrets.SSH_KEY }}" > ${{ inputs.sshFile }}
+          chmod 600 ${{ inputs.sshFile }}
+
+      - name: Run pre-build command
+        id: pre-build
+        if: ${{ inputs.preBuildCmd }}
+        run: ${{ inputs.preBuildCmd }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -51,10 +111,9 @@ jobs:
           ECR_REPO: ${{ steps.login-ecr.outputs.registry }}/${{ inputs.name }}
         run: |
           docker build \
-            --cache-from ${ECR_REPO}:latest \
+            ${{ inputs.args }} \
             --tag ${ECR_REPO}:${{ steps.vars.outputs.tag }} \
-            --tag ${ECR_REPO}:latest \
-            --file ${{ inputs.dockerfile }} .
+            --file ${{ inputs.dockerfile }} ${{ inputs.context }}
           docker push --all-tags ${ECR_REPO}
 
       - name: Notify
