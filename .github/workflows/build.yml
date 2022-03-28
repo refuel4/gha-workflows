@@ -107,6 +107,7 @@ jobs:
       - name: Build, tag, and push image to Amazon ECR
         env:
           DOCKER_BUILDKIT: 1
+          BUILDKIT_PROGRESS: plain
           DOCKER_DRIVER: overlay2
           ECR_REPO: ${{ steps.login-ecr.outputs.registry }}/${{ inputs.name }}
         run: |
