@@ -55,7 +55,7 @@ jobs:
 
       - name: Set image tag
         run: |
-          cd ${{ inputs.deployPath }/${{ inputs.name }}/${{ inputs.environment }}
+          cd ${{ inputs.deployPath }}/${{ inputs.name }}/${{ inputs.environment }}
           sed -i "s|newTag:.*|newTag: ${{ inputs.tag }}|g" kustomization.yaml
           git config --global user.name "GitHub Actions"
           git config --global user.email "github-actions.noreply@creadits.com"
